@@ -76,7 +76,7 @@ fourfoldplot(svmLinear.cm$table, color = c("Red", "Green"), conf.level = 0, marg
 ```{r}
 # Train on Downsampled data using SVM Radial method
 set.seed(5627)
-svm_Radial <- train(Class ~., data = smoteSampling_train, method = "svmRadial",trControl=svm_ctrl,preProcess = c("center", "scale"),metric = "ROC",tuneLength = 10)
+svm_Radial <- train(Class ~., data = downsampling_train, method = "svmRadial",trControl=svm_ctrl,preProcess = c("center", "scale"),metric = "ROC",tuneLength = 10)
 svm_Radial$results
 PredictSvmRadial <- predict(svm_Radial, newdata = test_dataCC)
 svmRadial.cm <- confusionMatrix(PredictSvmRadial,data = test_dataCC$Class)
@@ -84,7 +84,7 @@ fourfoldplot(svmRadial.cm$table, color = c("Red", "Green"), conf.level = 0, marg
 ```
 
 ```{r}
-# Naive Bayes
+# Naive Bayes Model Implementation
 set.seed(5627)
 # train
 ctrl <- trainControl(method = "repeatedcv", repeats = 5,classProbs = TRUE,summaryFunction = twoClassSummary)
@@ -96,15 +96,23 @@ nb.cm <- confusionMatrix(PredictMod_NB,data = test_dataCC$Class)
 fourfoldplot(nb.cm$table, color = c("Red", "Green"), conf.level = 0, margin = 1, main = "Confusion Matrix for Model") 
 ```
 ```{r}
-# ROC curve for evalution model
+# ROC curve for evalution of Naive Bayes model
 library(ROCR)
-curve(log(x), from=0, to=100, xlab="False Positive Rate", ylab="True Positive Rate", main="ROC curve", col="green", lwd=3, axes=F)
-predict_prob_nb<-predict(nbModel_fit, test_dataCC, type="prob")
+library(gplots)
+predict_prob_nb <- predict(nbModel_fit, test_dataCC, type="prob")
 pred<-ROCR::prediction(predictions=predict_prob_nb[, 2], labels=test_dataCC$Class) 
-roc <- performance(PredictMod_NB ,  measure="tpr", x.measure="fpr")
+roc_nb <- performance(pred ,  measure="tpr", x.measure="fpr")
+plot(roc_nb, main="ROC curve for Quality of Life Model", col="blue", lwd=3)
 ```
 ```{r}
-allVal <- varImp(downSampling_fit)
+roc_auc_cc<-performance(pred, measure="auc")
+str(roc_auc_cc)
+roc_auc_cc@y.values
+```
+
+
+```{r}
+allVal <- varImp(nbModel_fit)
 plot(allVal)
 ```
 
