@@ -1,0 +1,142 @@
+```{r}
+library(tidyverse)
+library(Amelia)
+library(caret)
+library(dummies)
+```
+```{r}
+cropDF <- read.csv("apy.csv")
+str(cropDF)
+```
+```{r}
+# NA values
+sum(is.na(cropDF))
+```
+```{r}
+# As there are 3730 NA values which is not affecting the prediction so we can easily remove them.
+cropDF <- na.omit(cropDF)
+sum(is.na(cropDF))
+```
+```{r}
+# Remove state and crop year coloumn name as it would not be contributed in the final model
+cropDF <- select(cropDF,-c(State_Name),-c(Crop_Year))
+# Selecting four crops for the same Rice , Turmeric , Banana , Sugarcane
+cropDF <- filter(cropDF , Crop == "Rice" | Crop == "Banana" | Crop == "Turmeric" | Crop == "Sugarcane")
+nrow(cropDF)
+```
+```{r}
+# Miss map and ggplots 
+missmap(cropDF)
+ggplot(cropDF, aes(x= Area)) + geom_histogram(bins = 20 ,alpha = 0.5 ,fill = '#FF6666') + ggtitle('Output by Area Type')
+ggplot(cropDF, aes(x= Production)) + geom_histogram(bins = 20 ,alpha = 0.5 , fill = 'blue') + ggtitle('Output by Production')
+```
+```{r}
+# Correlation by using ggpairs between production and Area
+library(GGally)
+library(corrplot)
+ggpairs(data=cropDF, columns=4:5, title="crop data" )
+# We can show Correlation by corrplot also for numeric columns only ( which are Area and productions)
+number.colm <- sapply(cropDF,is.numeric)
+#Filter Data
+corData <- cor(cropDF[,number.colm])
+print(corrplot(corData , method = 'color'))
+```
+
+
+```{r}
+#  As we can see in the structure that District_Name has 634 leveles which might be good for the model prediction.
+# Encoding for District Name using caret library
+library(caret)
+dumy <- dummyVars(" ~ .", data = cropDF)
+crop.dummies<- data.frame(predict(dumy, newdata = cropDF))
+```
+
+```{r}
+# As Area and Production are on different scales, so need to do mean normalization on these columns
+# skewness of Production and Area continious variable 
+skewness(crop.dummies$Production)
+skewness(crop.dummies$Area)
+# We have see skewness is very high (11 and 3) , so we can do log transformation for these two columns
+crop.dummies$Production <- log1p(crop.dummies$Production)
+crop.dummies$Area <- log1p(crop.dummies$Area)
+# Check the skewness again
+skewness(crop.dummies$Production)
+skewness(crop.dummies$Area)
+# skewness of the predictor variable is between 0 and -0.5
+#
+#crop.dummies$Production <- (crop.dummies$Production - mean(crop.dummies$Production) ) / sd(crop.dummies$Production)
+#crop.dummies$Area <- (crop.dummies$Area - mean(crop.dummies$Area) ) / sd(crop.dummies$Area)
+```
+```{r}
+# Area and Production visualisation after dummy coding
+ggplot(crop.dummies, aes(x= Area)) + geom_histogram(bins = 20 ,alpha = 0.5 ,fill = '#FF6666') + ggtitle('Output by Area Type')
+ggplot(crop.dummies, aes(x= Production)) + geom_histogram(bins = 20 ,alpha = 0.5 , fill = 'blue') + ggtitle('Output by Production')
+```
+
+
+```{r}
+# Data Splitting using sample function
+library(caTools)
+set.seed(123)
+training_LMData <- sample.split(crop.dummies$Production , SplitRatio = 0.7)
+# Training Data
+train.LMData <- subset(crop.dummies , sample == TRUE)
+# Test Data
+test.LMData <- subset(crop.dummies , sample == FALSE)
+```
+
+
+```{r}
+# Lets first build simple regression model on this data, with no NA and missing values
+cropLinearModel <- lm(Production ~ ., data = train.LMData)
+#summary(cropLinearModel)
+# Let's plot residuals
+residuals_LM <- residuals(cropLinearModel)
+class(residuals_LM)
+residuals_LM <- as.data.frame(residuals_LM)
+head(residuals_LM)
+ggplot(residuals_LM , aes(residuals_LM)) + geom_histogram(fill = 'blue' , alpha = 0.5 ) 
+```
+```{r}
+# Plot all the linear model graphs
+plot(cropLinearModel)
+```
+
+```{r}
+# Make predictions
+LM_predictions <- predict(cropLinearModel , test.LMData)
+
+prediction_results <- cbind(LM_predictions , test.LMData$Production)
+colnames(prediction_results) <- c('predicted' , 'actual')
+prediction_results <- as.data.frame(prediction_results)
+print(head(prediction_results))
+
+```
+
+```{r}
+library(MLmetrics)
+#Need to check this.
+MAPE(y_pred = exp(cropLinearModel$fitted.values) , y_true = train.LMData$Production )
+```
+```{r}
+# Build Model using regression trees
+library(rpart)
+library(rpart.plot)
+
+regModelFit <- rpart(Production ~. ,method = "anova" , data = train.LMData)
+printcp(regModelFit)
+rpart.plot(regModelFit, type = 3, digits = 3, fallen.leaves = TRUE)
+```
+```{r}
+plotcp(regModelFit)
+# create additional plots
+par(mfrow=c(1,2)) # two plots on one page
+rsq.rpart(regModelFit) # visualize cross-validation results 
+```
+```{r}
+# Prediction 
+predictions_regTree <- predict(regModelFit, test.LMData, type="vector")
+MAE_CropProd <-  function(actual,predicted) { mean(abs(actual - predicted)) }
+MAE(crop.dummies$Production , predictions_regTree)
+```
+
