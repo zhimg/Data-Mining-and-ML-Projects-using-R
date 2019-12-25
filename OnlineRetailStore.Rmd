@@ -1,0 +1,195 @@
+```{r}
+library(tidyverse)
+library(dplyr) # For filter function
+library(Amelia)
+library(readxl)
+library(anytime) #for converting invoice data format to date format
+library(ggplot2) # For ggplots
+library(Rfast)
+library(plotrix) # for 3d plot charts
+library(reshape)
+```
+
+```{r}
+# Reading Data
+onlineRetailDF <- read_excel("/Users/him/Desktop/Important Docs/NCI/Academic courses/Data mining and machine learning/Clg_Project/dataset/Finalized dataset/Online Retail.xlsx")
+str(onlineRetailDF)
+```
+```{r}
+# EXPLORATORY DATA ANALYSIS
+# Convert the InvoiceDate data type to date format
+onlineRetailDF$InvoiceDate <- anytime::anydate(onlineRetailDF$InvoiceDate)
+```
+```{r}
+str(onlineRetailDF)
+```
+```{r}
+# Convert into factors for categorical values to avoid duplicate
+onlineRetailDF$InvoiceNo <- as.factor(onlineRetailDF$InvoiceNo)
+onlineRetailDF$StockCode <- as.factor(onlineRetailDF$StockCode)
+onlineRetailDF$Description <- as.factor(onlineRetailDF$Description)
+onlineRetailDF$Country <- as.factor(onlineRetailDF$Country)
+# Change numeric to integer to avoid double and float values
+onlineRetailDF$Quantity <- as.integer(onlineRetailDF$Quantity)
+onlineRetailDF$CustomerID <- as.integer(onlineRetailDF$CustomerID)
+# Check structure 
+str(onlineRetailDF)
+```
+```{r}
+head(onlineRetailDF)
+colSums(is.na(onlineRetailDF)) # cheking for NA values
+# Description has 1454 NA values , we can simply remove description NA values 
+onlineRetailDF <- onlineRetailDF[!is.na(onlineRetailDF$Description),]
+# Now look at cancelled invoice
+table(grepl("^C", onlineRetailDF$InvoiceNo))
+# As there are 9288 values means invoice is not generated for them.
+# add a new variable to find top 10 best items
+onlineRetailDF$Revenue <- with(onlineRetailDF , (onlineRetailDF$Quantity * onlineRetailDF$UnitPrice))
+head(onlineRetailDF)
+```
+
+```{r}
+# Finding top ten selling items
+revItemsDF <- aggregate(Revenue ~ StockCode + Description, onlineRetailDF, sum)
+revItemsDF <- head(revItemsDF[order(-revItemsDF$Revenue),],10)
+
+toptenPlot <- ggplot(revItemsDF, aes(fill=Description, StockCode, Revenue , label = rownames(revItemsDF$Description))) + 
+    geom_bar(position="stack", stat="identity")
+toptenPlot
+```
+```{r}
+# Total 4070 items sold by the store
+UniqueItems <- unique(onlineRetailDF$StockCode)
+head(UniqueItems)
+```
+```{r}
+# No remove NA values 
+colSums(is.na(onlineRetailDF))
+onlineRetailDF <- na.omit(onlineRetailDF)
+colSums(is.na(onlineRetailDF)) # NO NA VALUES
+```
+
+
+```{r}
+revItemsDF
+```
+```{r}
+# Filtering out data for top ten selling items.
+onlineRetailDF %>% select(InvoiceNo ,StockCode,Quantity, InvoiceDate , UnitPrice, CustomerID,Country ,Revenue) %>% 
+                   filter(StockCode =="DOT"|| StockCode =="22423" || StockCode =="47566" ||StockCode =="85123A" 
+                           || StockCode =="85099B" || StockCode =="23084" || StockCode =="POST" || StockCode =="22086"
+                           ||StockCode =="84879" ||StockCode =="79321" )
+```
+
+```{r}
+# Get month a, year and yearMonth from the dataframe for analysing date wise
+onlineRetailDF$YearMonth <- as.factor(format(as.Date(onlineRetailDF$InvoiceDate), "%Y-%m"))
+onlineRetailDF$Year <- as.factor(format(as.Date(onlineRetailDF$InvoiceDate), "%Y"))
+onlineRetailDF$Month <- as.factor(format(as.Date(onlineRetailDF$InvoiceDate), "%m"))
+print(str(onlineRetailDF))
+```
+
+```{r}
+summary(onlineRetailDF) 
+#One invoice can have multiple items bought in it - Max and Min InvoiceDate tells that our transactions are from 2010-12-01 till 2011-12-09
+```
+
+```{r}
+# Top 10 selling items per revenue
+bp <- ggplot(onlineRetailDF, aes(StockCode, Revenue))
+bp + geom_boxplot()
+# Top 10 customers gives high revenues
+highRevDF <- aggregate(Revenue ~Country, onlineRetailDF, sum)
+highRevDF <-  head(highRevDF[order(-highRevDF$Revenue),],10)
+highRevPlot <- ggplot(highRevDF, aes(fill= Country , Country, Revenue , label = rownames(highRevDF))) + geom_bar(position="stack", stat="identity")
+highRevPlot
+pie3D(highRevDF$Revenue,labels=highRevDF$Country,explode=0.1,main="Pie Chart of Top 5 Countries ")
+```
+
+
+```{r}
+# Revenue per month 
+MonthRevDF <- aggregate(Revenue ~ InvoiceDate + Month, onlineRetailDF, sum)
+revMonthPlot <- ggplot(MonthRevDF, aes(fill= "Revenue Per Month" , Month , Revenue , label = rownames(MonthRevDF))) + geom_bar(position="dodge", stat="identity")
+revMonthPlot
+YearMonthRevDF <- aggregate(Revenue ~ InvoiceDate + YearMonth, onlineRetailDF, sum)
+revYearMonthPlot <- ggplot(YearMonthRevDF, aes(fill= "Revenue Over the period" , YearMonth , Revenue , label = rownames(YearMonthRevDF))) + geom_bar(position="dodge", stat="identity")
+revYearMonthPlot
+```
+```{r}
+# Preparing data for clustering
+retail.data = onlineRetailDF %>% group_by(CustomerID, Country) %>% summarise(NumTransactions = n(), NetRevenue = sum(Revenue))
+```
+```{r}
+# preparing a variable for customer-Regularity
+# customer-Regularity is a score out of 13 (as 13 months of data). if customer appeared for 7 months out of 13, his score is 7.
+regularity = numeric()
+for(i in 1:length(retail.data$CustomerID)){
+      regularity[i] = length(unique(onlineRetailDF$YearMonth[onlineRetailDF$CustomerID == retail.data$CustomerID[i]]))  
+}
+regularity = regularity/13
+```
+```{r}
+cus.item = onlineRetailDF %>% group_by(CustomerID,StockCode) %>% summarise(count = sum(Quantity))
+cus.item.count = cast(cus.item, CustomerID~StockCode)
+```
+```{r}
+cus.item.count[is.na(cus.item.count)] <- 0
+```
+```{r}
+retail.data2 <- retail.data
+retail.data2$Customer.Regularity <- regularity
+retail.data2 <- head(retail.data2,4372)
+# Creating new data items in new dataset for top 10 stock codes
+retail.data2$item.85123A = cus.item.count$`85123A`
+retail.data2$item.71053 = cus.item.count$`71053`
+retail.data2$item.84406B = cus.item.count$`84406B`
+retail.data2$item.84029G = cus.item.count$`84029G`
+retail.data2$item.84029E = cus.item.count$`84029E`
+retail.data2$item.22752 = cus.item.count$`22752`
+retail.data2$item.21730 = cus.item.count$`21730`
+retail.data2$item.22633 = cus.item.count$`22633`
+retail.data2$item.22632 = cus.item.count$`22632`
+retail.data2$item.84879 = cus.item.count$`84879`
+retail.data2$item.CustomerID = cus.item.count$CustomerID
+```
+
+
+```{r}
+
+# change NumTransactions into numeric variable for PCA
+retail.data2$NumTransactions = as.numeric(retail.data2$NumTransactions)
+retail.data2 = retail.data2[,-1]
+```
+```{r}
+# PCA using prcomp():
+pcaOutput = prcomp(retail.data2, scale = TRUE)
+pcaVar = pcaOutput$sdev^2
+PcaPercentage = pcaVar / sum(pcaVar) * 100 # in percentage
+PcaPercentage
+```
+```{r}
+# Applying Clustering
+set.seed(1)
+kmeans_model = kmeans(retail.data2, centers = 3, nstart = 50)
+model_withinss = kmeans_model$tot.withinss
+model_betweenss = kmeans_model$betweenss
+table(kmeans_model$cluster)
+```
+```{r}
+fitted(kmeans_model)
+```
+
+
+```{r}
+praOut = prcomp(retail.data2, scale = TRUE)
+library(cluster)
+distance = dist(retail.data2)
+plot(silhouette(kmeans_model$cluster, distance))
+```
+```{r}
+# We can also predic the sales using the above data and apply regreesion
+modelRegression <- lm(formula = retail.data2$NetRevenue  ~ ., data = retail.data2)
+fitted(modelRegression)
+```
+

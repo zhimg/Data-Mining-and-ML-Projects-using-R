@@ -1,21 +1,28 @@
 ```{r}
 library(dplyr)
 library(tidyverse)
-library(Amelia)
+library(caret) # For downsample function
+library(caTools) # used for spiting samples
+library(OneR) # for bin function
+library(kernlab) # For various Svm kernerls
+library(DMwR) # For Smote function
+library(ROCR) # For ROC curve
+library(gplots) # For gplots
+library(e1071)  # for naive bayes model
 ```
 ```{r}
+# I have given the path of my machine where the dataset has kept.It should be a relative path with CC.csv.
 CreditCardDF <- read.csv("/Users/him/Desktop/Important Docs/NCI/Academic courses/Data mining and machine learning/Clg_Project/dataset/Finalized dataset/CC.csv")
 #Header of Data
 head(CreditCardDF)
 # Checking if there are any null values in my dataset colums
-sum(is.na(CreditCardDF)) # There are no Na values 
+print(sum(is.na(CreditCardDF))) # There are no Na values 
 # As mentioned in the interim project report also , PCA has already done on this dataset so that is the reason
-str(CreditCardDF)
+print(str(CreditCardDF))
+print(table(CreditCardDF$Class))
 ```
 ```{r}
 # As we need to change numerical data into categorical data for Naive Bayes using binning
-#install.packages("OneR") for bin function
-library(OneR)
 str(bin(CreditCardDF)) # We can see that all independent variables have levels 5
 binedData <- bin(CreditCardDF, nbins = 5, labels = NULL, method ="length", na.omit = TRUE)
 binedData$Class <- factor(binedData$Class , levels = c(0,1) , labels = c("False","True"))
@@ -23,8 +30,6 @@ binedData$Class <- factor(binedData$Class , levels = c(0,1) , labels = c("False"
 as.data.frame(table(binedData$Class))
 ```
 ```{r}
-library(caret)
-library(caTools) # used for spiting samples
 # Split dataset 
 ccdf_split <- sample.split(binedData$Class , SplitRatio = 0.8)
 training_dataCC <- subset(binedData , ccdf_split== TRUE)
@@ -32,13 +37,20 @@ test_dataCC <- subset(binedData , ccdf_split== FALSE)
 table(training_dataCC$Class)
 ```
 ```{r}
-# We have found that 284315 are legitimate transactions and only 492 are fault transactions. 
-# So if we train our model on this data , it would be biased towards the majority side, so we need to 
-# Remove this imbalanced classification by using Sampling methods.
+# Train Model on all training data
+set.seed(5627)
+svm_classifier_Train <- ksvm(Class ~ ., data = training_dataCC,kernel = "vanilladot")
+PredictModel <- predict(svm_classifier_Train, newdata = test_dataCC)
+train.svm.cm <- confusionMatrix(PredictModel,data = test_dataCC$Class)
+# Plot confusion Matrix
+fourfoldplot(train.svm.cm$table, color = c("blue", "yellow"), conf.level = 0, margin = 1, main = "Confusion Matrix for Model") 
+summary(PredictModel) # you can observe the accuracy.
+```
+
+```{r}
+# Using Sampling methods for imbalaced classification.
 # Using SMOTE method 
-library(smotefamily)
-library(DMwR)
-smoteSampling_train <- SMOTE(Class ~., training_dataCC, perc.over = 4800, k = 5, perc.under = 1000)
+smoteSampling_train <- SMOTE(Class ~., training_dataCC, perc.over = 5000, k = 5, perc.under = 500)
 table(smoteSampling_train$Class)
 ggplot(smoteSampling_train, aes(Class)) + geom_bar(fill = "red")+theme_bw()+
   coord_flip()+ labs(title = "Bar Chart") + theme_gray()
@@ -51,17 +63,39 @@ ggplot(downsampling_train, aes(Class)) + geom_bar(fill = "red")+theme_bw()+
 ```{r}
 # Train Model on Smote sampled data
 set.seed(5627)
-library(kernlab)
-svm_classifier <- ksvm(Class ~ ., data = smoteSampling_train,kernel = "vanilladot")
-PredictModel <- predict(svm_classifier, newdata = test_dataCC)
-svm.cm <- confusionMatrix(PredictModel,data = test_dataCC$Class)
+# Using Vanilladot
+svm_classifier_vanilladot <- ksvm(Class ~ ., data = smoteSampling_train,kernel = "vanilladot")
+PredictModelSVMV <- predict(svm_classifier_vanilladot, newdata = test_dataCC)
+svm.cm.van <- confusionMatrix(PredictModelSVMV,data = test_dataCC$Class)
+# Summary
+summary(PredictModelSVMV)
 # Plot confusion Matrix
-fourfoldplot(svm.cm$table, color = c("Red", "Green"), conf.level = 0, margin = 1, main = "Confusion Matrix for Model")  
+fourfoldplot(svm.cm.van$table, color = c("Red", "Green"), conf.level = 0, margin = 1, main = "Confusion Matrix for Model using Vanilladot svm kernel")  
+#Using rbfdot
+svm_classifier_rbfdot <- ksvm(Class ~ ., data = smoteSampling_train,kernel = "rbfdot")
+PredictModelSVMR <- predict(svm_classifier_rbfdot, newdata = test_dataCC)
+svm.cm.rbf <- confusionMatrix(PredictModelSVMR,data = test_dataCC$Class)
+#Summary
+summary(PredictModelSVMR)
+# Plot confusion Matrix
+fourfoldplot(svm.cm.rbf$table, color = c("Red", "Green"), conf.level = 0, margin = 1, main = "Confusion Matrix for Model using rbfdot svm")
+```
+```{r}
+# Train Model on down sampled data
+set.seed(5627)
+down_svm_classifier <- ksvm(Class ~ ., data = downsampling_train,kernel = "vanilladot" )
+down_PredictModel <- predict(down_svm_classifier, newdata = test_dataCC)
+down.svm.cm <- confusionMatrix(down_PredictModel,data = test_dataCC$Class)
+# Plot confusion Matrix
+fourfoldplot(down.svm.cm$table, color = c("Red", "Green"), conf.level = 0, margin = 1, main = "Confusion Matrix for Model")
+summary(down_PredictModel)
 ```
 
 
+
+
 ```{r}
-# Train on Downsampled data using SVM linear method
+# Train on Downsampled data using SVM linear method including K-fold technique
 set.seed(5627)
 svm_ctrl <- trainControl(method = "repeatedcv", repeats = 5,classProbs = TRUE,summaryFunction = twoClassSummary)
 svm_Linear <- train(Class ~., data = downsampling_train, method = "svmLinear",trControl=svm_ctrl,preProcess = c("center", "scale"),metric = "ROC" ,tuneLength = 10)
@@ -69,52 +103,25 @@ PredictMod <- predict(svm_Linear, newdata = test_dataCC)
 svmLinear.cm <- confusionMatrix(PredictMod,data = test_dataCC$Class)
 #
 fourfoldplot(svmLinear.cm$table, color = c("Red", "Green"), conf.level = 0, margin = 1, main = "Confusion Matrix for Model") 
-```
-
-
-
-```{r}
-# Train on Downsampled data using SVM Radial method
-set.seed(5627)
-svm_Radial <- train(Class ~., data = downsampling_train, method = "svmRadial",trControl=svm_ctrl,preProcess = c("center", "scale"),metric = "ROC",tuneLength = 10)
-svm_Radial$results
-PredictSvmRadial <- predict(svm_Radial, newdata = test_dataCC)
-svmRadial.cm <- confusionMatrix(PredictSvmRadial,data = test_dataCC$Class)
-fourfoldplot(svmRadial.cm$table, color = c("Red", "Green"), conf.level = 0, margin = 1, main = "Confusion Matrix for Model") 
+summary()
 ```
 
 ```{r}
 # Naive Bayes Model Implementation
 set.seed(5627)
-# train
-ctrl <- trainControl(method = "repeatedcv", repeats = 5,classProbs = TRUE,summaryFunction = twoClassSummary)
-nbModel_fit <- train(Class ~ ., data = downsampling_train, method = "nb", metric = "ROC",trControl = ctrl)
+table(smoteSampling_train$Class)
+# Train Model
+nbModel_fit=naiveBayes(smoteSampling_train$Class ~., data=smoteSampling_train )
 # Model Prediction and Evaluation
 PredictMod_NB <- predict(nbModel_fit, newdata = test_dataCC[-32])
 nb.cm <- confusionMatrix(PredictMod_NB,data = test_dataCC$Class)
+nb.cm$byClass
 # Plot confusion matrix
-fourfoldplot(nb.cm$table, color = c("Red", "Green"), conf.level = 0, margin = 1, main = "Confusion Matrix for Model") 
-```
-```{r}
-# ROC curve for evalution of Naive Bayes model
-library(ROCR)
-library(gplots)
-predict_prob_nb <- predict(nbModel_fit, test_dataCC, type="prob")
-pred<-ROCR::prediction(predictions=predict_prob_nb[, 2], labels=test_dataCC$Class) 
-roc_nb <- performance(pred ,  measure="tpr", x.measure="fpr")
-plot(roc_nb, main="ROC curve for Quality of Life Model", col="blue", lwd=3)
-```
-```{r}
-roc_auc_cc<-performance(pred, measure="auc")
-str(roc_auc_cc)
-roc_auc_cc@y.values
+fourfoldplot(nb.cm$table, color = c("Red", "Green"), conf.level = 0, margin = 1, main = "Confusion Matrix for Naive Bayes Model")
 ```
 
 
-```{r}
-allVal <- varImp(nbModel_fit)
-plot(allVal)
-```
+
 
 
 
