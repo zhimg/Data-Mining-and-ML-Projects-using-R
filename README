@@ -1,0 +1,12 @@
+ML Models
+
+I have applied 5 Machine Learning models on three datasets related to different domains. 
+
+The first dataset is about Credit card fraud detection, in which principal component analyses has already been done 
+because its confidential data related to financial accounts, as this is a classification problem I have applied
+SVM with various kernels and Naïve Bayes machine learning algorithm. Dataset has about 300 thousand records with
+imbalanced classification so used various sampling techniques.Some SVM kernel performed better than others. 
+
+The second dataset is about crop production where I was predicting the production based on Area for different districts using linear regression and regression tree ML methods, this dataset has a lot of categorical variables therefore dummy coding has been used. Regression modelwas found more satisfactory as compare to linear one. 
+
+The third dataset is about online store/shop transactions of certain period which I have analyzed and applied clustering technique (unsupervised learning) for predicting consumer behavior based on together purchased items.
